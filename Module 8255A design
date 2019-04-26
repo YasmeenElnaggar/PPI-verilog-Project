@@ -1,71 +1,106 @@
-module 8255A_PPI_Chip (PA,PB,PCL,PCU,Data,nWR,nRD,nCS,reset,A)
+
+module PPI_Chip (PA,PB,PCL,PCU,Data_bus,nWR,nRD,nCS,reset,A);
 input reset;
 input nWR;
 input nRD;
 input nCS;
 input [1:0] A;
-inout [7:0] Data;
-inout [7:0] PA, 
+inout [7:0] Data_bus;
+inout [7:0] PA; 
 inout [7:0] PB;
-inout [3:0] PCH;
+inout [3:0] PCL;
 inout [3:0] PCU;
 reg [7:0] CWR; 
+reg [7:0] Data_IO;
+
+reg [7:0] PORTA;
+reg [7:0] PORTB;
+reg [3:0] PORTC_UPPER;
+reg [3:0] PORTC_LOWER;
+reg [3:0] PCL_reg;
+reg [3:0] PCU_reg;
 reg Mode_Flag;
-reg GA_Flag;
-reg GB_Flag;
-
-assign Mode_Flag = CWR[7:7];
-
-assign GA_Flag = (Mode_Flag)?  ( (CWR[6:5])? 0:1 ) : (0) ;
-
-assign GB_Flag = (Mode_Flag)?  ( (CWR[2:2])? 0:1 ) : (0) ;
+reg GA_IO_Flag;
+reg GB_IO_Flag;
 
 
-always @ (negedge nCS)
-begin
+//Output Latch opertaion to the inout PORTS:
+assign PA  = (Mode_Flag)?  ( (CWR[4])?  8'bzzzz_zzzz: PORTA)      : (8'bzzzz_zzzz);
+assign PB  = (Mode_Flag)?  ( (CWR[1])?  8'bzzzz_zzzz: PORTB)      : (8'bzzzz_zzzz);
+assign PCL = (Mode_Flag)?  ( (CWR[0])?  8'bzzzz_zzzz: PCL_reg)    : (PORTC_LOWER);
+assign PCU = (Mode_Flag)?  ( (CWR[3])?  8'bzzzz_zzzz: PCU_reg)    : (PORTC_UPPER);
 
-//Control Word Register
-if ( (A==2'b11) && (!nWR) && (nRD) )
-begin  CWR<=Data; end
+assign Data_bus = ( (!nRD) && (!nCS) )?  (Data_IO) : (8'bzzzz_zzzz) ;
+
+
+always @ (A,nRD,nWR,nCS,Data_bus)
+begin 
+//Check the Control Word Register from the CPU:
+if ( (A==2'b11) && (!nWR) && (nRD) && (!nCS) )
+begin  
+CWR = Data_bus; 
+Mode_Flag  = CWR[7] ;
+GA_IO_Flag = (Mode_Flag)?  ( (CWR[6:5])? 0:1 ) : (0) ;
+GB_IO_Flag = (Mode_Flag)?  ( (CWR[2])? 0:1 )   : (0) ;		
+//Data_IO = 8'b1100_1100; 
+end
 
 else
 begin
 
 //Read/Write Group A operations: 
-if (GA_Flag==1)
+if (GA_IO_Flag==1)
 //Group A is in simple I/O Mode:
 begin
 case (A)
 //PORTA read or Write:
- 2'b00: if ((!nRD) && (CWR[4:4]==1)) 
-        begin Data<=PA; end
-        else if ((!nWR) && (CWR[4:4]==0))         
-        begin PA<=Data; end
+ 2'b00: begin 
+        if ( (!nRD) && (CWR[4:4]==1) && (!nCS) ) 
+        begin Data_IO = PA;  end
+
+        else if ( (!nWR) && (CWR[4:4]==0) && (!nCS) )         
+        begin PORTA = Data_bus; end
+
+        end
 
 //Port C upper read and Write:
-2'b10: if ( (!nRD) && (CWR[3:3]==1) )       
-       begin Data<=PCU; end
-       else if ( (!nWR) && (CWR[3:3]==0) )
-       begin PCU<=Data; end
+2'b10: begin
+       if ( (!nRD) && (CWR[3:3]==1) && (!nCS) )       
+       begin Data_IO[7:4] = PCU; end
+
+       else if ( (!nWR) && (CWR[3:3]==0) && (!nCS) )
+       begin PCU_reg = Data_bus[7:4]; end
+   
+       end
+
 endcase
 end
 
 //Read/Write Group B operations:
-if (GB_Flag == 1)
+if (GB_IO_Flag == 1)
 //Group B is in Simple I/O Mode:
 begin
 case (A)
  //PORTB Read Or Write:
- 2'b01: if ( (!nRD) && (CWR[1]==1) )
-        begin Data<=PB; end
-        else if ( (!nWR) && (CWR[1]==0) )        
-        begin PB<=Data; end 
+ 2'b01: begin
+        if ( (!nRD) && (CWR[1]==1) && (!nCS) )
+        begin Data_IO = PB; end
+
+        else if ( (!nWR) && (CWR[1]==0) && (!nCS) )      
+        begin PORTB = Data_bus; end 
+ 
+        end
 
 //PORTC lower read or Write:
- 2'b10: if ( (!nRD) && (CWR[0:0]==1) )       
-        begin Data<=PCL; end
-        else if ( (!nWR) && (CWR[0:0]==0) )
-        begin PCL<=Data; end
+ 2'b10: begin
+        if ( (!nRD) && (CWR[0]==1) && (!nCS) )       
+        begin Data_IO[3:0] = PCL; end
+
+        else if ( (!nWR) && (CWR[0]==0) && (!nCS) )
+        begin PCL_reg = Data_bus[3:0]; end
+     
+        end
+
 endcase
 end
 
@@ -74,28 +109,59 @@ end //else al keberaaa
 end //Always
 
 
-//BSR Mode:
-always @ (negedge Mode_Flag)
+
+//Configure the chip at the BSR Mode:
+always @ ( negedge Mode_Flag , Data_bus )
+begin
+if(Mode_Flag == 0 )
 begin
 case (CWR[3:1])
  //Set/Reset Lower bits of PORTC [3:0]:
- 3'b000: PCL[0:0]<=CWR[0:0];
- 3'b001: PCL[1:1]<=CWR[0:0];
- 3'b010: PCL[2:2]<=CWR[0:0];
- 3'b011: PCL[3:3]<=CWR[0:0];
+ 3'b000: begin 
+         PORTC_LOWER[0] = CWR[0];
+         end 
+
+ 3'b001: begin
+         PORTC_LOWER[1] = CWR[0];
+         end
+
+ 3'b010: begin
+         PORTC_LOWER[2] = CWR[0];
+         end
+
+ 3'b011: begin
+         PORTC_LOWER[3] = CWR[0];
+         end
 
  //Set/Reset Upper bits of PORTC [7:4]:
- 3'b100: PCU[0:0]<=CWR[0:0];
- 3'b101: PCU[1:1]<=CWR[0:0];
- 3'b110: PCU[2:2]<=CWR[0:0];
- 3'b111: PCU[3:3]<=CWR[0:0];
+ 3'b100: begin
+         PORTC_UPPER[0] = CWR[0];
+         end
+
+ 3'b101: begin
+         PORTC_UPPER[1] = CWR[0];
+         end
+
+ 3'b110: begin
+         PORTC_UPPER[2] = CWR[0];
+         end
+
+ 3'b111: begin 
+         PORTC_UPPER[3] = CWR[0];
+         end
 endcase
+end
 end //always
 
-
+//Configure the chip at the posedge of the reset signal:
 always @ (posedge reset)
 begin
-CWR<=8'h9B ;
+CWR <= 8'b1001_1011 ;
+PORTA <= 8'bzzzz_zzzz;
+PORTB <= 8'bzzzz_zzzz;
+PORTC_LOWER <=4'bzzzz;
+PORTC_UPPER <=4'bzzzz;
 end
+
 
 endmodule 
