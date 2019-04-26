@@ -1,0 +1,101 @@
+module 8255A_PPI_Chip (PA,PB,PCL,PCU,Data,nWR,nRD,nCS,reset,A)
+input reset;
+input nWR;
+input nRD;
+input nCS;
+input [1:0] A;
+inout [7:0] Data;
+inout [7:0] PA, 
+inout [7:0] PB;
+inout [3:0] PCH;
+inout [3:0] PCU;
+reg [7:0] CWR; 
+reg Mode_Flag;
+reg GA_Flag;
+reg GB_Flag;
+
+assign Mode_Flag = CWR[7:7];
+
+assign GA_Flag = (Mode_Flag)?  ( (CWR[6:5])? 0:1 ) : (0) ;
+
+assign GB_Flag = (Mode_Flag)?  ( (CWR[2:2])? 0:1 ) : (0) ;
+
+
+always @ (negedge nCS)
+begin
+
+//Control Word Register
+if ( (A==2'b11) && (!nWR) && (nRD) )
+begin  CWR<=Data; end
+
+else
+begin
+
+//Read/Write Group A operations: 
+if (GA_Flag==1)
+//Group A is in simple I/O Mode:
+begin
+case (A)
+//PORTA read or Write:
+ 2'b00: if ((!nRD) && (CWR[4:4]==1)) 
+        begin Data<=PA; end
+        else if ((!nWR) && (CWR[4:4]==0))         
+        begin PA<=Data; end
+
+//Port C upper read and Write:
+2'b10: if ( (!nRD) && (CWR[3:3]==1) )       
+       begin Data<=PCU; end
+       else if ( (!nWR) && (CWR[3:3]==0) )
+       begin PCU<=Data; end
+endcase
+end
+
+//Read/Write Group B operations:
+if (GB_Flag == 1)
+//Group B is in Simple I/O Mode:
+begin
+case (A)
+ //PORTB Read Or Write:
+ 2'b01: if ( (!nRD) && (CWR[1]==1) )
+        begin Data<=PB; end
+        else if ( (!nWR) && (CWR[1]==0) )        
+        begin PB<=Data; end 
+
+//PORTC lower read or Write:
+ 2'b10: if ( (!nRD) && (CWR[0:0]==1) )       
+        begin Data<=PCL; end
+        else if ( (!nWR) && (CWR[0:0]==0) )
+        begin PCL<=Data; end
+endcase
+end
+
+end //else al keberaaa
+
+end //Always
+
+
+//BSR Mode:
+always @ (negedge Mode_Flag)
+begin
+case (CWR[3:1])
+ //Set/Reset Lower bits of PORTC [3:0]:
+ 3'b000: PCL[0:0]<=CWR[0:0];
+ 3'b001: PCL[1:1]<=CWR[0:0];
+ 3'b010: PCL[2:2]<=CWR[0:0];
+ 3'b011: PCL[3:3]<=CWR[0:0];
+
+ //Set/Reset Upper bits of PORTC [7:4]:
+ 3'b100: PCU[0:0]<=CWR[0:0];
+ 3'b101: PCU[1:1]<=CWR[0:0];
+ 3'b110: PCU[2:2]<=CWR[0:0];
+ 3'b111: PCU[3:3]<=CWR[0:0];
+endcase
+end //always
+
+
+always @ (posedge reset)
+begin
+CWR<=8'h9B ;
+end
+
+endmodule 
