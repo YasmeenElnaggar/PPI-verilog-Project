@@ -1,0 +1,112 @@
+//*************************************** Test bench for Read....Write.....Read Operation*******************************************//
+
+module tb_Input_Output_PORT ();
+reg reset;
+reg WR_bar;
+reg RD_bar;
+reg CS_bar;
+reg  [1:0] address;
+wire [7:0] PORTA;
+wire [7:0] PORTB;
+wire [3:0] PORTC_Lower;
+wire [3:0] PORTC_Upper;
+wire [7:0] Data;
+
+// Register to write on the Data bus:
+reg [7:0] Data_reg;
+
+//Registers for the read operation:
+reg [7:0] PA_reg;
+reg [7:0] PB_reg;
+reg [3:0] PCL_reg;
+reg [3:0] PCU_reg;
+
+PPI_Chip Test_2 (PORTA,PORTB,PORTC_Lower,PORTC_Upper,Data,WR_bar,RD_bar,CS_bar,reset,address);
+
+assign Data  = (Data_reg);
+assign PORTA = (PA_reg);
+assign PORTB = (PB_reg);
+assign PORTC_Lower = (PCL_reg);
+assign PORTC_Upper = (PCU_reg);
+
+initial
+begin
+// Disable all Control signals at the beginning:
+reset = 1'b0;
+RD_bar = 1'b1;
+WR_bar = 1'b1;
+CS_bar = 1'b1;
+
+//1-First Control Word for (Read from PORTA, Write on PORTC, Read from PORTB)
+
+//Sending the write Control word format:
+#5 Data_reg = 8'b1001_0010;
+#2 CS_bar = 1'b0;
+#2 WR_bar = 1'b0;
+#2 address = 2'b11;
+
+//a)Read Operation from the PORTA:
+#7 Data_reg = 8'bzzzz_zzzz;
+#5 PA_reg = 8'b1101_1101;    //Data on the PORTA From external Peripheral Equipment:
+fork
+#5 RD_bar = 1'b0;
+#5 WR_bar = 1'b1;
+join
+#5 address = 2'b00;
+
+//b)write operation on PORTC:
+#5 Data_reg = 8'b0011_1100;
+#2 PCL_reg = 4'bzzzz;
+#2 PCU_reg = 4'bzzzz;
+fork
+#5 WR_bar = 1'b0;
+#5 RD_bar = 1'b1;
+join
+#5 address = 2'b10;
+
+//Read operation from PORTB: 
+#7 Data_reg = 8'bzzzz_zzzz;
+#5 PB_reg = 8'b0101_0101;
+fork
+#5 WR_bar = 1'b1;
+#5 RD_bar = 1'b0;
+join
+#5 address = 2'b01;
+
+//2-Send new Control Word Format (Write PORTA, Read PORTC, Write PORTB)
+
+//Sending the write Control word format:
+#5 Data_reg = 8'b1000_1001;
+fork
+#2 WR_bar = 1'b0;
+#2 RD_bar = 1'b1;
+join
+#2 address = 2'b11;
+
+//a)Write Operation On PORTA:
+#7 PA_reg = 8'bzzzz_zzzz;
+#5 Data_reg = 8'b1100_0011 ;
+#5 address = 2'b00;
+
+//b)Read from PORTC:
+#7 Data_reg = 8'bzzzz_zzzz;
+#5 PCL_reg = 4'b0000;
+#5 PCU_reg = 4'b1111;
+fork
+#5 RD_bar = 1'b0;
+#5 WR_bar = 1'b1;
+join
+#5 address = 2'b10;
+
+//c)Write Operation on PORTB:
+#7 PB_reg = 8'bzzzz_zzzz;
+#5 Data_reg = 8'b0110_1001;
+fork
+#5 RD_bar = 1'b1;
+#5 WR_bar = 1'b0;
+join
+#5 address = 2'b01;
+
+end
+
+endmodule
